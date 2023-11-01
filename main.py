@@ -1,89 +1,119 @@
 import tkinter as tk
+from tkinter import ttk
+import pandas as pd
 
-class CreditPaymentApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Платежи по кредиту")
-        
-        # Переменные для хранения ввода пользователя
-        self.principal_var = tk.DoubleVar()
-        self.down_payment_var = tk.DoubleVar()
-        self.interest_rate_var = tk.DoubleVar()
-        self.loan_term_var = tk.IntVar()
-        self.additional_payment_var = tk.DoubleVar()
-        
-        # Создание элементов интерфейса
-        tk.Label(root, text="Цена покупки:").pack()
-        self.principal_entry = tk.Entry(root, textvariable=self.principal_var)
-        self.principal_entry.pack()
-        
-        tk.Label(root, text="Первоначальный платеж:").pack()
-        self.down_payment_entry = tk.Entry(root, textvariable=self.down_payment_var)
-        self.down_payment_entry.pack()
-        
-        tk.Label(root, text="Годовая процентная ставка (%):").pack()
-        self.interest_rate_entry = tk.Entry(root, textvariable=self.interest_rate_var)
-        self.interest_rate_entry.pack()
-        
-        tk.Label(root, text="Срок кредита (годы):").pack()
-        self.loan_term_entry = tk.Entry(root, textvariable=self.loan_term_var)
-        self.loan_term_entry.pack()
-        
-        tk.Label(root, text="Дополнительные платежи:").pack()
-        self.additional_payment_entry = tk.Entry(root, textvariable=self.additional_payment_var)
-        self.additional_payment_entry.pack()
-        
-        self.calculate_button = tk.Button(root, text="Рассчитать", command=self.calculate_payments)
-        self.calculate_button.pack()
-        
-        self.result_label = tk.Label(root, text="")
-        self.result_label.pack()
-        
-        self.payment_schedule_label = tk.Label(root, text="Схема платежей:")
-        self.payment_schedule_label.pack()
-        
-        self.payment_schedule = tk.Text(root, height=10, width=40)
-        self.payment_schedule.pack()
-        
-    def calculate_payments(self):
-        principal = self.principal_var.get()
-        down_payment = self.down_payment_var.get()
-        interest_rate = self.interest_rate_var.get() / 100
-        loan_term = self.loan_term_var.get()
-        additional_payment = self.additional_payment_var.get()
-        
-        loan_amount = principal - down_payment
-        monthly_interest_rate = interest_rate / 12
-        num_payments = loan_term * 12
-        monthly_payment = (loan_amount * monthly_interest_rate) / (1 - (1 + monthly_interest_rate) ** -num_payments)
-        
-        result_text = f"Ежемесячный платеж: {monthly_payment:.2f}"
-        self.result_label.config(text=result_text)
-        
-        payment_schedule_text = ""
-        balance = loan_amount
-        total_principal_payments = 0
-        total_interest_payments = 0
-        
-        for month in range(1, num_payments + 1):
-            interest_payment = balance * monthly_interest_rate
-            principal_payment = monthly_payment - interest_payment - additional_payment
-            balance -= principal_payment
-            
-            total_principal_payments += principal_payment
-            total_interest_payments += interest_payment
-            
-            payment_schedule_text += f"Месяц {month}: Основной платеж: {principal_payment:.2f}, Платеж по процентам: {interest_payment:.2f}, Остаток долга: {balance:.2f}\n"
-        
-        self.payment_schedule.delete(1.0, tk.END)
-        self.payment_schedule.insert(tk.END, payment_schedule_text)
-        
-        result_text += f"\nСумма всех основных платежей: {total_principal_payments:.2f}"
-        result_text += f"\nСумма платежей по процентам (размер переплаты): {total_interest_payments:.2f}"
-        
-        self.result_label.config(text=result_text)
+principal = 0
+down_payment = 0
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = CreditPaymentApp(root)
-    root.mainloop()
+def calculate_monthly_payment(principal, down_payment, annual_interest_rate, loan_term, quarterly=False):
+    if quarterly:
+        n = loan_term * 4
+        r = annual_interest_rate / 400  # Quarterly interest rate
+    else:
+        n = loan_term * 12
+        r = annual_interest_rate / 1200  # Monthly interest rate
+
+    loan_amount = principal - down_payment
+    monthly_payment = loan_amount * r / (1 - (1 + r) ** -n)
+    total_payment = 0
+    payments = []
+
+    for period in range(1, n + 1):
+        interest_payment = loan_amount * r
+        principal_payment = monthly_payment - interest_payment
+        loan_amount -= principal_payment
+
+        if period % 4 == 0 and quarterly:
+            total_payment_period = monthly_payment
+        else:
+            total_payment_period = monthly_payment * 3 if quarterly else monthly_payment
+
+        payments.append([period, interest_payment, principal_payment, total_payment_period])
+
+        total_payment += total_payment_period
+
+    return payments, total_payment
+
+def calculate_button_clicked():
+    global principal, down_payment, payments, total_payment
+    principal = float(principal_entry.get())
+    down_payment = float(down_payment_entry.get())
+    annual_interest_rate = float(annual_interest_rate_entry.get())
+    loan_term = int(loan_term_entry.get())
+    quarterly = quarterly_checkbutton.get()
+
+    payments, total_payment = calculate_monthly_payment(principal, down_payment, annual_interest_rate, loan_term, quarterly)
+
+    df = pd.DataFrame(payments, columns=["Период", "Проценты", "Основной платеж", "Сумма платежа"])
+    result_text.delete(1.0, tk.END)
+    result_text.insert(tk.END, df.to_string(index=False))
+    result_text.insert(tk.END, "\nСумма всех основных платежей: {:.2f}\n".format(total_payment - principal + down_payment))
+    result_text.insert(tk.END, "Сумма платежей по процентам (размер переплаты): {:.2f}".format(total_payment))
+
+def extra_payment_button_clicked():
+    global principal, down_payment, payments, total_payment
+    extra_payment = float(extra_payment_entry.get())
+    if extra_payment > 0:
+        for i in range(len(payments)):
+            if extra_payment <= 0:
+                break
+            if payments[i][3] > 0:
+                principal_payment = min(payments[i][3], extra_payment)
+                extra_payment -= principal_payment
+                payments[i][2] += principal_payment
+                payments[i][3] -= principal_payment
+
+    df = pd.DataFrame(payments, columns=["Период", "Проценты", "Основной платеж", "Сумма платежа"])
+    result_text.delete(1.0, tk.END)
+    result_text.insert(tk.END, df.to_string(index=False))
+    result_text.insert(tk.END, "\nСумма всех основных платежей: {:.2f}\n".format(total_payment - principal + down_payment))
+    result_text.insert(tk.END, "Сумма платежей по процентам (размер переплаты): {:.2f}".format(total_payment))
+
+app = tk.Tk()
+app.title("Платежи по кредиту")
+
+frame = ttk.Frame(app)
+frame.grid(row=0, column=0, padx=10, pady=10)
+
+principal_label = ttk.Label(frame, text="Сумма покупки:")
+principal_label.grid(row=0, column=0)
+principal_entry = ttk.Entry(frame)
+principal_entry.grid(row=0, column=1)
+
+down_payment_label = ttk.Label(frame, text="Сумма первоначального платежа:")
+down_payment_label.grid(row=1, column=0)
+down_payment_entry = ttk.Entry(frame)
+down_payment_entry.grid(row=1, column=1)
+
+annual_interest_rate_label = ttk.Label(frame, text="Годовая процентная ставка:")
+annual_interest_rate_label.grid(row=2, column=0)
+annual_interest_rate_entry = ttk.Entry(frame)
+annual_interest_rate_entry.grid(row=2, column=1)
+
+loan_term_label = ttk.Label(frame, text="Срок кредита (в годах):")
+loan_term_label.grid(row=3, column=0)
+loan_term_entry = ttk.Entry(frame)
+loan_term_entry.grid(row=3, column=1)
+
+quarterly_checkbutton = tk.BooleanVar()
+quarterly_checkbutton.set(False)
+quarterly_checkbox = ttk.Checkbutton(frame, text="Платежи ежеквартально", variable=quarterly_checkbutton)
+quarterly_checkbox.grid(row=4, column=0, columnspan=2)
+
+calculate_button = ttk.Button(frame, text="Рассчитать", command=calculate_button_clicked)
+calculate_button.grid(row=5, column=0, columnspan=2)
+
+result_text = tk.Text(frame, height=10, width=40)
+result_text.grid(row=6, column=0, columnspan=2)
+
+extra_payment_label = ttk.Label(frame, text="Дополнительный платеж:")
+extra_payment_label.grid(row=7, column=0)
+extra_payment_entry = ttk.Entry(frame)
+extra_payment_entry.grid(row=7, column=1)
+
+extra_payment_button = ttk.Button(frame, text="Применить дополнительный платеж", command=extra_payment_button_clicked)
+extra_payment_button.grid(row=8, column=0, columnspan=2)
+
+payments, total_payment = [], 0
+
+app.mainloop()
